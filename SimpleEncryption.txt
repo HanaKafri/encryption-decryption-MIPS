@@ -1,0 +1,578 @@
+
+.data
+
+
+modifiedTextS: 		.asciiz "\noutput: \n"
+start: 			.asciiz "\nPlease enter e (encyption) or d (decryption) or x to exit. (you can decrypte the encrypted file)\n"
+dTextFileName:		.asciiz "\nPlease enter the name of the cipher text file\n"
+eTextFileName:		.asciiz "\nPlease enter the name of the plain text file\n"
+ecTextFileName:		.asciiz "\nPlease enter the name of the cipher text file\n"
+dpTextFileName:		.asciiz "\nPlease enter the name of the plain text file\n"
+errorMessage: 		.asciiz "\nError: Could not open file, enter the write name.\n"  # Error message string
+errorS:         	.asciiz "\nWError: Wrong input, please enter e or d.\n"
+shiftString:   		.asciiz "\nShift Value = "
+encryptedTextS:  	.asciiz "\nEncrypted text: \n"
+
+fileData: 		.space 90000 		#this is the string that will hold all of the words 
+modifiedText: 		.space 90000 		# the enc. text with only alphabet char.
+list: 			.space 2000  		# array to save number of characters of each word, to find the shift value
+TextFileName:		.ascii ".space 20000" 
+outputText: 		.space 90000		# to save the output in (for both encrypted and decrypted text)
+.text
+.globl main
+
+
+MAIN:
+   la $s3, 0
+   
+main:
+
+   la $a0, start
+   li $v0, 4 #print string
+   syscall
+   
+   li $v0, 12 # Read char
+   syscall # $v0 = value read
+   
+   addi, $s3, $s3, 1
+   
+   li $t1, 'e'
+   move $a0, $v0
+   beq $a0, $t1, encryption # if the user enters e go to encryption function
+
+   li $t1, 'd'
+   move $a0, $v0
+   beq $a0, $t1, decryption # if the user enters d go to decryption function
+
+   li $t1, 'x'
+   move $a0, $v0
+   beq $a0, $t1, END # if the user enters d go to decryption function
+   
+   j error     # else: give an error
+
+
+
+################################ ENCRYPTION ######################################
+
+encryption:
+
+    li $v0, 4 #print string
+    la $a0, eTextFileName # to ask user to enter the name of the file
+    syscall
+    
+    li $v0, 8 # read string
+    la $a0, TextFileName # $a0 = address of str
+    li $a1, 21 # $a1 = max string length
+    syscall
+
+    # clean the name of the file from char 10, and come back here:
+    jal nameClean 		
+    
+    # check if the file exists, and read it:
+    jal fileCheck    # to read the file
+    
+    # to remove non-alphabet characters:
+    jal modifyText
+    
+    # get the shift value (saved in $t8):
+    jal numOfChar
+
+
+EShift:
+    
+    jal encrypt
+   
+   # here, get the data from the file after reading it (which saved in fileData), and encrypte it here.
+
+    li $v0, 4 #print string
+    la $a0, ecTextFileName # to ask user to enter the name of the file
+    syscall
+    
+    li $v0, 8 # read string
+    la $a0, TextFileName # $a0 = address of str
+    li $a1, 21 # $a1 = max string length
+    syscall
+
+    # clean the name of the file from char 10, and come back here:
+    jal nameClean 	
+    
+    j printOnFile
+    
+     
+
+################################### encryption shift #################################
+
+encrypt:
+
+    and $s0, $s0, 0
+   
+    la $t4, modifiedText
+    
+    la $a1, outputText
+    
+encLoop:
+    lb $t0, ($t4)           #load a byte to t0, and check:
+        
+    beq $t0, $zero, printEnc  #stop condition if equals \0 (end of string)
+    
+    beq $t0, ' ', encContinue # space
+    beq $t0, 0xd, encContinue # carriage return
+    
+    j shiftEnc   	
+  
+
+encContinue: # add the letter to the new string
+    
+    sb $t0, outputText($s0) #store char in string
+    addi $s0,$s0,1 #next char in string
+    
+    addi $t4,$t4,1          #increment the address
+    j encLoop                  #loop up!
+
+
+shiftEnc:
+ li $s1, 97
+
+ # enc:
+ # letter value = v
+ # shift = s
+ # [(v - 65 or 97) + s] mod 26 + 97
+ 
+ li $t7, 26
+ 
+ sub $t0, $t0, $s1 # v = v - 97
+ 
+ add $t6, $t0, $t8 # v = v + s
+ 
+ div $t6, $t7
+ mfhi $t0 # t0 = t6 mod 26
+ 
+ add $t0, $t0, $s1 # out = v + 97
+ 
+ j encContinue
+
+printEnc:
+
+ jr $ra
+
+
+
+################################ DECRYPTION ######################################
+
+decryption:
+
+    li $v0, 4 #print string
+    la $a0, dTextFileName
+    syscall
+    
+    li $v0, 8 # read string
+    la $a0, TextFileName # $a0 = address of str
+    li $a1, 21 # $a1 = max string length
+    syscall
+
+    # clean the name of the file from char 10, and come back here:
+    jal nameClean
+    
+    # check if the file exists, and read it:
+    jal fileCheck
+
+
+    bne $s3, 1, DSHIFT1
+
+    # to get the shift value (saved in $t8):
+     jal numOfChar
+     
+
+DShift:
+   # here, get the data from the file after reading it (which saved in fileData), and decrypte it here.
+     
+    jal decrypt
+    
+    li $v0, 4 #print string
+    la $a0, dpTextFileName # to ask user to enter the name of the file
+    syscall
+    
+    li $v0, 8 # read string
+    la $a0, TextFileName # $a0 = address of str
+    li $a1, 21 # $a1 = max string length
+    syscall
+
+    # clean the name of the file from char 10, and come back here:
+    jal nameClean 	
+    
+    j printOnFile
+
+DSHIFT1:
+ 
+ jal printShift
+ j DShift
+
+################################## decryption shift #####################################################
+
+
+decrypt:
+
+    and $s0, $s0, 0
+    
+    la $t4, fileData
+    
+    la $a1, outputText
+    
+Decloop:
+    lb $t0, ($t4)           #load a byte to t0, and check:
+        
+    beq $t0, $zero, printDec  #stop condition if equals \0 (end of string)
+    
+    beq $t0, ' ', Dcontinue   # skip space and dont decrypte it.
+    
+    # only decrypte alphabet characters:
+    bgt $t0, 123, Dcontinue # 122 - 1. If the character is greater than 'z', skip it
+       
+    bgt $t0, 96, decSmall  # 97 - 2. If the character is greater than 'a', add it
+    
+    bgt $t0, 91, Dcontinue # 90 - 3. If the character is greater than 'Z', remove it
+  
+    bgt $t0, 64, decCapital  # 65 - 4. If the character is greater than 'A', add it
+    
+    j Dcontinue   	# else, remove it
+  
+Dcontinue: # add the letter to the new string
+    
+    sb $t0, outputText($s0) # store char in string
+    addi $s0,$s0,1 	     # next char in string
+
+    addi $t4,$t4,1          # increment the address
+    j Decloop               # loop up!
+
+decSmall:
+ li $s1, 97
+ j Dshift
+
+decCapital:
+ li $s1, 65
+ j Dshift
+ 
+Dshift:
+
+ # dec
+ # letter value = v
+ # shift = s
+ # [( v - 65 or 97) + (26 - s)] mod 26 + 65 or 97
+ 
+ # $t8 = shift value = s
+ 
+ li $t7, 26
+ 
+ sub $t6, $t7, $t8 # s = 26 - s (shift value)
+ 
+ sub $t0, $t0, $s1 # v = v - 65 or 97
+ 
+ add $t6, $t0, $t6 # v = v + s
+ 
+ div $t6, $t7
+ mfhi $t0 # t0 = t6 mod 26
+ 
+ add $t0, $t0, $s1 # out = v + 65 or 97
+ 
+ j Dcontinue
+
+printDec:
+
+ jr $ra
+
+
+
+########################### chack if file exists and read it ##########################
+
+fileCheck:
+
+    li $v0, 13           	# Syscall number for open file
+    la $a0, TextFileName     	# File name
+    li $a1, 0           	# flag for reading
+    li $a2, 0           	# 0 means read file (file flag)
+    syscall			# open the file
+    
+    bge $v0, 0, fileRead       # If the file handle is non-negative, go to the file_exists label
+    j fileError                # else it means there's an error opening the file
+
+ ######## read file ########
+
+fileRead:
+
+    move $s0,$v0         # move the saved data from the file to s0 (save the file descriptor)
+
+    # the following code is to read the file
+    li $v0, 14           # the syscall to read the file is 14
+    move $a0,$s0         # file descript to identify which file will be read 
+    la $a1,fileData      # the buffer that containing the string for the ENTIRE file
+    la $a2,90000         # buffer length
+    syscall
+
+    # Close the file
+    li $v0, 16           # the syscall to close the file is 16
+    move $a0,$s0         # file descriptor to close
+    syscall              #close the file
+
+    # Initialize a loop counter to 0
+    li $t0, 0
+
+    # Load the first character of the string into $t1
+    lb $t1, 0($a1)
+
+    jr $ra # to go back to the function (encryption / decryption)
+    
+
+
+######################## remove non-alphabet characters ###################3#####
+
+modifyText:
+
+    and $s0, $s0, 0
+
+    la $t4, fileData
+    
+    la $a1, modifiedText
+    
+loop:
+    lb $t0, ($t4)           #load a byte to t0, and check:
+        
+    beq $t0, $zero, back  #stop condition if equals \0 (end of string)
+    
+    beq $t0, ' ', continue
+    beq $t0, 0xd, continue # carriage return - means new word
+    #beq $t0, 0xa, continue # new line - means new word
+    
+    bgt $t0, 123, con # 122 - 1. If the character is greater than or equal 'z', skip it
+    
+    # else, go check:
+    bgt $t0, 96, continue  # 97 = a - 2. If the character is greater than or equal 'a', add it
+    
+    # else, go check: 
+    bgt $t0, 91, con  # 90 - 3. If the character is greater than or equal 'Z', remove it
+    
+    # else, go check:
+    bgt $t0, 64, replace  # 65 - 4. If the character is greater than or equal 'A', replace it
+    
+    j con   	# else, remove it
+  
+replace: # change uppercase to lettercase
+
+   or $t0, $t0, 32
+
+   j continue # or remove it, but keep continue function after it
+
+continue1:
+    
+    li $t0, 0x20
+    sb $t0, modifiedText($s0) #store char in string
+    addi $s0,$s0,1 #next char in string
+    
+    addi $t4,$t4,1          #increment the address
+    j loop   
+          
+continue: # add the letter to the new string
+    
+    sb $t0, modifiedText($s0) #store char in string
+    
+    addi $s0,$s0,1 #next char in string
+    
+    addi $t4,$t4,1          #increment the address
+    j loop                  #loop up!
+   
+con: # skip - don't add the letter to the new string
+
+    addi $t4,$t4,1          #increment the address
+    j loop                  #loop up!
+
+back: # to go back to the encryption / decryption function that called loop
+  jr $ra
+
+
+
+########################## shift value #################################
+
+numOfChar:
+
+    la $t4, fileData
+    
+    la $t5, 0 # to count the characters
+    la $t6, 1 # to count the words (size of the array)
+    la $t7, 0 # index of the array
+    
+countOfChar:
+    lb $t0, ($t4)           #load a byte to t0, and check:
+        
+    beq $t0, $zero, end1  #stop condition if equals \0 (end of string)
+    
+    beq $t0, ' ', count1 # the word ended
+    beq $t0, 13, count1
+    
+    bgt $t0, 123, count3 # 122 - 1. If the character is greater than or equal 'z', skip it
+       
+    bgt $t0, 96, count2  # 97 - 2. If the character is greater than or equal 'a', count it
+    
+    bgt $t0, 91, count3 # 90 - 3. If the character is greater than or equal 'Z', skip it
+  
+    bgt $t0, 64, count2  # 65 - 4. If the character is greater than or equal 'A', count it
+    
+    j count3 # the word didn't end yet, count the letters
+
+
+count1:
+
+ add $t6, $t6, 1 # to count words
+
+ sb $t5, list($t7) # add t5 to the array(i)
+ add $t7, $t7, 1 # i++
+ 
+ la $t5, 0
+ add $t4, $t4, 1 # get the next character in the string
+ j countOfChar
+
+count2:
+
+ add $t5, $t5, 1 # to count the characters
+ add $t4, $t4, 1 # get the next character in the string
+ j countOfChar
+
+count3:
+
+ add $t4, $t4, 1 # get the next character in the string
+ j countOfChar
+
+
+end1: # the end of the string
+
+ sb $t5, list($t7) # add t5 to the array(i)
+ add $t7, $t7, 1 # i++
+
+ la $t7, 0 # i
+ lb $t8, list($zero) # max var. has the value of the first num of char in the array.
+ 
+ 
+ 
+ 
+findMax:
+ 
+ lb $t2, list($t7) 
+
+ # to find the max value
+ bgt $t2, $t8, max
+ j contLoop
+ 
+max:
+
+ lb $t8, list($t7) 	# get the max
+ add $t7, $t7, 1 	# i++
+ blt $t7, $t6, findMax # if the array is not done, go back
+ j printShift
+ 
+contLoop:
+
+ add $t7, $t7, 1 # i++
+ blt $t7, $t6, findMax # if the array is not done, go back
+ j printShift
+
+printShift: # exit
+
+ li $v0, 4
+ la $a0, shiftString
+ syscall
+ 
+ li $v0, 1 # print int
+ la $a0, ($t8)
+ syscall
+
+ jr $ra # EShift or DShift
+
+
+######################## to clear the name of the file ########################
+
+nameClean:
+    li $t0, 0       #loop counter
+    li $t1, 21      #loop end
+    
+clean:
+    beq $t0, $t1, L5
+    lb $t3, TextFileName($t0)
+    bne $t3, 0x0a, L6
+    sb $zero, TextFileName($t0)
+    L6:
+    addi $t0, $t0, 1
+    j clean
+    L5:
+    jr $ra
+
+
+###################### ERRORS ###########################
+
+###### ERROR: wrong input (e / d)
+error: # if the users enters other than e or d
+
+ la $a0, errorS
+ li $v0, 4 # print string
+ syscall
+
+ j main
+ 
+ 
+###### ERROR: file doesn't exist 
+fileError: # if there's an error opening the file
+
+ la $a0, errorMessage
+ li $v0, 4 #print string
+ syscall
+
+ j main
+ 
+
+################################################ print on file #################################################
+
+printOnFile:
+
+# Open the new file for writing and write the modified text to it:
+   li $v0, 13 # open syscall
+   la $a0, TextFileName # filename
+   li $a1, 1 # flag for writing
+   li $a2, 0 # file mode
+   syscall # open the file
+   move $s0, $v0 # save the file handle in $s0
+   
+   li $v0, 15 # write syscall
+   move $a0, $s0 # file handle
+   la $a1, outputText # address of modified text
+   li $a2, 90000 # length of modified text
+   syscall # write to the file
+   
+   li $v0, 16 # close syscall
+   move $a0, $s0 # file handle
+   syscall # close the file
+   
+   j main
+
+
+########################### END - EXIT ###################
+ 
+encEnd:
+ la $a0, modifiedTextS
+ li $v0, 4 #print string
+ syscall
+ 
+ la $a0, modifiedText
+ li $v0, 4 #print string
+ syscall
+
+end: # exit
+ 
+ la $a0, modifiedTextS
+ li $v0, 4 #print string
+ syscall
+ la $a0, outputText
+ li $v0, 4 #print string
+ syscall
+
+END:
+
+ li $v0, 10 # Exit program
+ syscall
+ 
